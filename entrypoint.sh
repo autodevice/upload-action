@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+info()  { echo "[autodevice] $*"; }
+fail()  { echo "::error::$*"; exit 1; }
+
+# ── Mask the API key ────────────────────────────────────────────────────────
+
+if [[ -n "${INPUT_API_KEY:-}" ]]; then
+  echo "::add-mask::${INPUT_API_KEY}"
+fi
+
+# ── Validate inputs ─────────────────────────────────────────────────────────
+
+[[ -n "${INPUT_API_KEY:-}" ]]       || fail "api-key is required"
+[[ -n "${INPUT_PACKAGE_NAME:-}" ]]  || fail "package-name is required"
+[[ -n "${INPUT_BUILD_PATH:-}" ]]    || fail "build-path is required"
+[[ -f "${INPUT_BUILD_PATH}" ]]      || fail "File not found: ${INPUT_BUILD_PATH}"
+
+API_URL="${INPUT_API_URL:-https://autodevice.io}"
+
+# ── Install jq if missing ──────────────────────────────────────────────────
+
+if ! command -v jq &>/dev/null; then
+  info "Installing jq…"
+  sudo apt-get install -qq -y jq
+fi
+
+# ── Git metadata ────────────────────────────────────────────────────────────
+
+COMMIT_SHA="${GITHUB_EVENT_PR_HEAD_SHA:-${GITHUB_SHA:-}}"
+BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
+REPO="${GITHUB_REPOSITORY:-}"
+
+# ── File metadata ───────────────────────────────────────────────────────────
+
+FILE_NAME="$(basename "${INPUT_BUILD_PATH}")"
+
+# Cross-platform file size (GNU stat vs BSD stat)
+if stat --version &>/dev/null 2>&1; then
+  FILE_SIZE="$(stat -c%s "${INPUT_BUILD_PATH}")"
+else
+  FILE_SIZE="$(stat -f%z "${INPUT_BUILD_PATH}")"
+fi
+
+info "File: ${FILE_NAME} (${FILE_SIZE} bytes)"
+
+# ── Step 1 – Start upload ──────────────────────────────────────────────────
+
+echo "::group::Step 1 – Get presigned upload URL"
+
+START_PAYLOAD="$(jq -n --arg fn "${FILE_NAME}" '{file_name: $fn}')"
+
+START_RESPONSE="$(
+  curl --fail --silent --show-error \
+    -X POST \
+    -H "Authorization: Bearer ${INPUT_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "${START_PAYLOAD}" \
+    "${API_URL}/api/v1/apps/start-upload"
+)"
+
+UPLOAD_URL="$(echo "${START_RESPONSE}" | jq -r '.upload_url')"
+FILE_PATH="$(echo "${START_RESPONSE}" | jq -r '.file_path')"
+
+[[ -n "${UPLOAD_URL}" && "${UPLOAD_URL}" != "null" ]] || fail "Missing upload_url in start-upload response"
+[[ -n "${FILE_PATH}" && "${FILE_PATH}" != "null" ]]   || fail "Missing file_path in start-upload response"
+
+info "Presigned URL obtained"
+echo "::endgroup::"
+
+# ── Step 2 – Upload binary ─────────────────────────────────────────────────
+
+echo "::group::Step 2 – Upload binary"
+
+curl --fail --silent --show-error \
+  -X PUT \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary "@${INPUT_BUILD_PATH}" \
+  "${UPLOAD_URL}"
+
+info "Upload complete"
+echo "::endgroup::"
+
+# ── Step 3 – Confirm upload ────────────────────────────────────────────────
+
+echo "::group::Step 3 – Confirm upload"
+
+CONFIRM_PAYLOAD="$(
+  jq -n \
+    --arg fp "${FILE_PATH}" \
+    --arg fs "${FILE_SIZE}" \
+    --arg pn "${INPUT_PACKAGE_NAME}" \
+    --arg sha "${COMMIT_SHA}" \
+    --arg br "${BRANCH}" \
+    --arg repo "${REPO}" \
+    '{
+      file_path:     $fp,
+      file_size:     ($fs | tonumber),
+      package_name:  $pn,
+      commit_sha:    $sha,
+      branch:        $br,
+      repository:    $repo
+    }'
+)"
+
+curl --fail --silent --show-error \
+  -X POST \
+  -H "Authorization: Bearer ${INPUT_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "${CONFIRM_PAYLOAD}" \
+  "${API_URL}/api/v1/apps/confirm-upload"
+
+info "Upload confirmed"
+echo "::endgroup::"
+
+info "Done! Build uploaded to autodevice.io"

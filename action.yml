@@ -1,0 +1,30 @@
+name: "AutoDevice Upload"
+description: "Upload mobile app builds (.apk/.ipa) to autodevice.io"
+
+inputs:
+  api-key:
+    description: "AutoDevice API key"
+    required: true
+  package-name:
+    description: "Application package name (e.g. com.example.app)"
+    required: true
+  build-path:
+    description: "Path to the .apk or .ipa file"
+    required: true
+  api-url:
+    description: "AutoDevice API base URL"
+    required: false
+    default: "https://autodevice.io"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Upload build to AutoDevice
+      shell: bash
+      env:
+        INPUT_API_KEY: ${{ inputs.api-key }}
+        INPUT_PACKAGE_NAME: ${{ inputs.package-name }}
+        INPUT_BUILD_PATH: ${{ inputs.build-path }}
+        INPUT_API_URL: ${{ inputs.api-url }}
+        GITHUB_EVENT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: ${{ github.action_path }}/entrypoint.sh
