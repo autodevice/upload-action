@@ -18,19 +18,44 @@ fi
 [[ -n "${INPUT_PACKAGE_NAME:-}" ]]  || fail "package-name is required"
 [[ -n "${INPUT_BUILD_PATH:-}" ]]    || fail "build-path is required"
 [[ -f "${INPUT_BUILD_PATH}" ]]      || fail "File not found: ${INPUT_BUILD_PATH}"
+[[ -r "${INPUT_BUILD_PATH}" ]]      || fail "File not readable: ${INPUT_BUILD_PATH}"
 
 API_URL="${INPUT_API_URL:-https://app.autodevice.io}"
 
 # ── Install jq if missing ──────────────────────────────────────────────────
 
-if ! command -v jq &>/dev/null; then
+if command -v jq &>/dev/null; then
+  info "jq already installed: $(jq --version)"
+else
   info "Installing jq…"
-  sudo apt-get install -qq -y jq
+  OS_NAME="$(uname -s)"
+  if [ "$OS_NAME" = "Darwin" ]; then
+    if command -v brew &>/dev/null; then
+      brew install --quiet jq
+    else
+      fail "Homebrew not found on macOS runner; cannot install jq. Please preinstall jq."
+    fi
+  elif command -v apt-get &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -qq -y jq
+  elif command -v apk &>/dev/null; then
+    sudo apk add --no-cache jq || apk add --no-cache jq
+  elif command -v yum &>/dev/null; then
+    sudo yum install -q -y jq
+  elif command -v dnf &>/dev/null; then
+    sudo dnf install -q -y jq
+  else
+    fail "Cannot install jq: no supported package manager found. Please preinstall jq."
+  fi
+
+  command -v jq &>/dev/null || fail "Failed to install jq"
+  info "jq installed: $(jq --version)"
 fi
 
 # ── Git metadata ────────────────────────────────────────────────────────────
 
-COMMIT_SHA="${GITHUB_EVENT_PR_HEAD_SHA:-${GITHUB_SHA:-}}"
+# For pull_request events, GITHUB_SHA is a merge commit — extract the actual PR head SHA
+PR_HEAD_SHA="$(jq -r '.pull_request.head.sha // empty' "$GITHUB_EVENT_PATH" 2>/dev/null || true)"
+COMMIT_SHA="${PR_HEAD_SHA:-${GITHUB_SHA:-}}"
 BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
 REPO="${GITHUB_REPOSITORY:-}"
 
