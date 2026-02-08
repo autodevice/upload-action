@@ -76,7 +76,7 @@ info "File: ${FILE_NAME} (${FILE_SIZE} bytes)"
 
 echo "::group::Step 1 – Get presigned upload URL"
 
-START_PAYLOAD="$(jq -n --arg fn "${FILE_NAME}" '{file_name: $fn}')"
+START_PAYLOAD="$(jq -n --arg fn "${FILE_NAME}" '{filename: $fn}')"
 
 START_RESPONSE="$(
   curl --fail --silent --show-error \
