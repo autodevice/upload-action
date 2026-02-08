@@ -14,7 +14,7 @@ inputs:
   api-url:
     description: "AutoDevice API base URL"
     required: false
-    default: "https://autodevice.io"
+    default: "https://app.autodevice.io"
 
 runs:
   using: "composite"
