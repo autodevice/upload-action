@@ -19,7 +19,7 @@ fi
 [[ -n "${INPUT_BUILD_PATH:-}" ]]    || fail "build-path is required"
 [[ -f "${INPUT_BUILD_PATH}" ]]      || fail "File not found: ${INPUT_BUILD_PATH}"
 
-API_URL="${INPUT_API_URL:-https://autodevice.io}"
+API_URL="${INPUT_API_URL:-https://app.autodevice.io}"
 
 # ── Install jq if missing ──────────────────────────────────────────────────
 
